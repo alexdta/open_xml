@@ -1,4 +1,5 @@
-﻿using DocumentFormat.OpenXml.Packaging;
+﻿using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using System;
 using System.Collections.Generic;
@@ -6,6 +7,10 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Windows.Media.Imaging;
+using A = DocumentFormat.OpenXml.Drawing;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
+using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 
 namespace open_xml
 {
@@ -71,16 +76,16 @@ namespace open_xml
                             #region Cuerpo_Documento
 
                             var cuerpoDoc = Principal.RootElement;
-                            var marcadoresDoc2 = cuerpoDoc.Descendants<BookmarkStart>();
+                            var marcadoresDoc = cuerpoDoc.Descendants<BookmarkStart>();
 
                             var fecha = DateTime.Now;
 
-                            TextoMarcador(marcadoresDoc2, "dia", fecha.Day.ToString());
-                            TextoMarcador(marcadoresDoc2, "mes", fecha.ToString("MMMM", CultureInfo.CurrentCulture));
-                            TextoMarcador(marcadoresDoc2, "anho", fecha.Year.ToString());
+                            TextoMarcador(marcadoresDoc, "dia", fecha.Day.ToString());
+                            TextoMarcador(marcadoresDoc, "mes", fecha.ToString("MMMM", CultureInfo.CurrentCulture));
+                            TextoMarcador(marcadoresDoc, "anho", fecha.Year.ToString());
 
-                            TextoMarcador(marcadoresDoc2, "nombre", "Edgar CM.");
-                            TextoMarcador(marcadoresDoc2, "notas", "Otros datos dentro de una tabla.");
+                            TextoMarcador(marcadoresDoc, "nombre", "Edgar CM.");
+                            TextoMarcador(marcadoresDoc, "notas", "Otros datos dentro de una tabla.");
 
                             #endregion
 
@@ -125,6 +130,15 @@ namespace open_xml
 
                             #endregion
 
+                            #region Imagen Marcador
+
+                            var marcadorImagen = marcadoresDoc.FirstOrDefault(bms => bms.Name == "imagen");
+                            var imagen = Path.Combine(Environment.CurrentDirectory, "crash.jpg");
+
+                            ImagenMarcador(doc, marcadorImagen, imagen);
+
+                            #endregion
+
                             doc.Close();
                         }
 
@@ -143,6 +157,98 @@ namespace open_xml
             {
                 throw e;
             }
+        }
+
+        public static void ImagenMarcador(WordprocessingDocument pDocumento, BookmarkStart pMarcador, string pImagen)
+        {
+            // Eliminar todo dentro del marcador
+            OpenXmlElement elem = pMarcador.NextSibling();
+            while (elem != null && !(elem is BookmarkEnd))
+            {
+                OpenXmlElement nextElem = elem.NextSibling();
+                elem.Remove();
+                elem = nextElem;
+            }
+
+            var imagePart = AgregarImagePart(pDocumento.MainDocumentPart, pImagen);
+
+            #region Dimensiones Imagen
+
+            // Calcular el tamaño según las dimensiones del archivo
+            var img = new BitmapImage(new Uri(pImagen, UriKind.RelativeOrAbsolute));
+            var anchoPx = img.PixelWidth;
+            var altoPx = img.PixelHeight;
+            var dpiHorizontal = img.DpiX;
+            var dpiVertical = img.DpiY;
+            const int emusPerInch = 914400;
+
+            var anchoEmus = (long)(anchoPx / dpiHorizontal * emusPerInch);
+            var altoEmus = (long)(altoPx / dpiVertical * emusPerInch);
+
+            #endregion
+
+            // Insertar imagen
+            AgregarImagen(pDocumento.MainDocumentPart.GetIdOfPart(imagePart), pMarcador, anchoEmus, altoEmus);
+        }
+
+        public static ImagePart AgregarImagePart(MainDocumentPart mainPart, string imageFilename)
+        {
+            ImagePart imagePart = mainPart.AddImagePart(ImagePartType.Jpeg);
+
+            using (FileStream stream = new FileStream(imageFilename, FileMode.Open))
+            {
+                imagePart.FeedData(stream);
+            }
+
+            return imagePart;
+        }
+
+        private static void AgregarImagen(string pIdPosicion, BookmarkStart pMarcador, long CX, long CY)
+        {
+            var element =
+                new Drawing(
+                    new DW.Inline(
+                        new DW.Extent()
+                        {
+                            Cx = CX,
+                            Cy = CY
+                        },
+                        new DW.EffectExtent() { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
+                        new DW.DocProperties() { Id = 1U, Name = "Imagen" },
+                        new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks() { NoChangeAspect = true }),
+                        new A.Graphic(
+                            new A.GraphicData(
+                                new PIC.Picture(
+                                    new PIC.NonVisualPictureProperties(
+                                        new PIC.NonVisualDrawingProperties()
+                                        {
+                                            Id = 0U,
+                                            Name = "Imagen.jpg"
+                                        },
+                                        new PIC.NonVisualPictureDrawingProperties()),
+                                    new PIC.BlipFill(
+                                        new A.Blip(new A.BlipExtensionList(new A.BlipExtension() { Uri = "{28A0092B-C50C-407E-A947-70E740481C1C}" }))
+                                        {
+                                            Embed = pIdPosicion,
+                                            CompressionState = A.BlipCompressionValues.Print
+                                        },
+                                            new A.Stretch(new A.FillRectangle())),
+                                    new PIC.ShapeProperties(
+                                        new A.Transform2D(new A.Offset() { X = 0L, Y = 0L }, new A.Extents() { Cx = CX, Cy = CY }),
+                                        new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle })))
+                            {
+                                Uri =
+                                        "http://schemas.openxmlformats.org/drawingml/2006/picture"
+                            }))
+                    {
+                        DistanceFromTop = 0U,
+                        DistanceFromBottom = 0U,
+                        DistanceFromLeft = 0U,
+                        DistanceFromRight = 0U,
+                        EditId = "50D07946"
+                    });
+
+            pMarcador.Parent.InsertAfter(new Run(element), pMarcador);
         }
 
     }
