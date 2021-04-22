@@ -64,7 +64,7 @@ namespace open_xml
                         {
                             MainDocumentPart Principal = doc.MainDocumentPart;
 
-                            #region Encabezado
+                            #region Marcadores Encabezado
 
                             var encabezado = Principal.HeaderParts.First();
                             var marcadoresEncabezado = encabezado.RootElement.Descendants<BookmarkStart>();
@@ -73,7 +73,7 @@ namespace open_xml
 
                             #endregion
 
-                            #region Cuerpo_Documento
+                            #region Marcadores Cuerpo Documento
 
                             var cuerpoDoc = Principal.RootElement;
                             var marcadoresDoc = cuerpoDoc.Descendants<BookmarkStart>();
@@ -89,7 +89,7 @@ namespace open_xml
 
                             #endregion
 
-                            #region Tabla
+                            #region Llenar Tabla
 
                             var tabla = cuerpoDoc.Descendants<Table>().ElementAt(1);
 
@@ -122,7 +122,7 @@ namespace open_xml
 
                             #endregion
 
-                            #region Eliminar Fila
+                            #region Eliminar Fila Tabla
 
                             var tablaEliminarFila = cuerpoDoc.Descendants<Table>().ElementAt(2); //Al eliminar la tabla anterior, el indice cambia
                             var filaEliminar = tablaEliminarFila.Descendants<TableRow>().ElementAt(2);
@@ -136,6 +136,16 @@ namespace open_xml
                             var imagen = Path.Combine(Environment.CurrentDirectory, "crash.jpg");
 
                             ImagenMarcador(doc, marcadorImagen, imagen);
+
+                            #endregion
+
+                            #region Combinar Documentos
+
+                            List<string> anexos = new List<string>();
+                            anexos.Add(Path.Combine(Environment.CurrentDirectory, "anexo1.docx"));
+                            anexos.Add(Path.Combine(Environment.CurrentDirectory, "anexo2.docx"));
+
+                            CombinarDocumentos(anexos, Principal);
 
                             #endregion
 
@@ -249,6 +259,35 @@ namespace open_xml
                     });
 
             pMarcador.Parent.InsertAfter(new Run(element), pMarcador);
+        }
+
+        private static void CombinarDocumentos(List<string> anexos, MainDocumentPart documentoBase)
+        {
+            if (anexos != null)
+            {
+                if (anexos.Count > 0)
+                {
+                    foreach (var anexo in anexos)
+                    {
+                        AlternativeFormatImportPart chunk =
+                            documentoBase.AddAlternativeFormatImportPart(AlternativeFormatImportPartType.WordprocessingML);
+
+                        using (FileStream fileStream = File.Open(anexo, FileMode.Open))
+                        {
+                            chunk.FeedData(fileStream);
+                        }
+
+                        AltChunk altChunk = new AltChunk() { Id = documentoBase.GetIdOfPart(chunk) };
+
+                        Paragraph saltoPagina = new Paragraph(new Run(new Break() { Type = BreakValues.Page }));
+
+                        documentoBase.Document.Body.AppendChild(saltoPagina);
+                        documentoBase.Document.Body.AppendChild(altChunk);
+                    }
+
+                    //documentoBase.Document.Save();
+                }
+            }
         }
 
     }
