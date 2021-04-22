@@ -24,5 +24,18 @@ namespace open_xml
             }
         }
 
+        private void button2_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                office_excel.editarXLSX();
+
+                Close();
+            }
+            catch (Exception lExcp)
+            {
+                MessageBox.Show(lExcp.Message);
+            }
+        }
     }
 }
