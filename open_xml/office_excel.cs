@@ -1,4 +1,5 @@
-﻿using DocumentFormat.OpenXml.Packaging;
+﻿using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using System;
 using System.Data;
@@ -60,6 +61,12 @@ namespace open_xml
 
         #endregion
 
+        /// <summary>
+        /// Crea una celda en una posicion especificada con un valor definido
+        /// </summary>
+        /// <param name="posicion"></param>
+        /// <param name="valor"></param>
+        /// <returns></returns>
         private static Cell crearCelda(string posicion, string valor)
         {
             Cell celda = new Cell()
@@ -72,6 +79,82 @@ namespace open_xml
             return celda;
         }
 
+        /// <summary>
+        /// Crea una celda en una posicion especificada con un valor definido
+        /// El texto se agregará a la SharedStringTable si no estuviese ya
+        /// </summary>
+        /// <param name="posicion"></param>
+        /// <param name="valor"></param>
+        /// <param name="Tabla"></param>
+        /// <returns></returns>
+        private static Cell crearCelda(string posicion, string valor, SharedStringTablePart Tabla)
+        {
+            var indice = AgregarSharedString(Tabla, valor);
+
+            Cell celda = new Cell()
+            {
+                DataType = new EnumValue<CellValues>(CellValues.SharedString),
+                CellReference = posicion,
+                CellValue = new CellValue(indice)
+            };
+
+            return celda;
+        }
+
+        /// <summary>
+        /// Verifica que el libro tenga una SharedStringTablePart
+        /// Crea o retorna la existente según el caso
+        /// </summary>
+        /// <param name="Principal"></param>
+        /// <returns></returns>
+        private static SharedStringTablePart TablaStrings(WorkbookPart Principal)
+        {
+            if (Principal.GetPartsOfType<SharedStringTablePart>().Count() > 0)
+            {
+                return Principal.SharedStringTablePart;
+            }
+
+            return Principal.AddNewPart<SharedStringTablePart>();
+        }
+
+        /// <summary>
+        /// Agrega el texto indicado a la SharedStringTable
+        /// Si el texto ya existe retorna el indice
+        /// </summary>
+        /// <param name="Tabla"></param>
+        /// <param name="Texto"></param>
+        /// <returns></returns>
+        private static int AgregarSharedString(SharedStringTablePart Tabla, string Texto)
+        {
+            if (Tabla.SharedStringTable == null)
+            {
+                Tabla.SharedStringTable = new SharedStringTable();
+            }
+
+            if (Tabla.SharedStringTable.Elements<SharedStringItem>().Where(e => e.InnerText.Equals(Texto)).Count() > 0)
+            {
+                return Tabla.SharedStringTable.Elements<SharedStringItem>()
+                    .Select(e => e.InnerText)
+                    .ToList()
+                    .IndexOf(Texto);
+            }
+
+            Tabla.SharedStringTable.AppendChild(new SharedStringItem(new Text(Texto)));
+            Tabla.SharedStringTable.Save();
+
+            return Tabla.SharedStringTable.Count() - 1;
+        }
+
+        /// <summary>
+        /// Crea una celda en una posicion especificada con un valor definido
+        /// Se define si el campo va en negrita (bold)
+        /// Opcionalmente se puede establecer el tamaño de la fuente
+        /// </summary>
+        /// <param name="posicion"></param>
+        /// <param name="valor"></param>
+        /// <param name="bold"></param>
+        /// <param name="fontSize"></param>
+        /// <returns></returns>
         private static Cell crearCelda(string posicion, string valor, bool bold, int fontSize = 12)
         {
             Cell celda = new Cell()
@@ -98,6 +181,75 @@ namespace open_xml
             return celda;
         }
 
+        /// <summary>
+        /// Cambia el texto de una celda especifica en una hoja
+        /// </summary>
+        /// <param name="datosHoja"></param>
+        /// <param name="referenciaCelda"></param>
+        /// <param name="texto"></param>
+        private static void TextoCelda(SheetData datosHoja, string referenciaCelda, string texto)
+        {
+            //Buscar la celda en la hoja
+            var celda =
+                datosHoja.Descendants<Cell>()
+                .Where(c => c.CellReference.Value.Equals(referenciaCelda))
+                .FirstOrDefault();
+
+            //Si la celda ya contiene datos, estos se actualizan
+            if (celda != null)
+            {
+                celda.RemoveAllChildren();
+                celda.AppendChild(new InlineString(new Text { Text = texto }));
+                celda.DataType = CellValues.InlineString;
+            }
+            //Si la celda no contiene nada, se crea la celda con sus datos
+            else
+            {
+                /***REVISAR POR QUE NO FUNCIONA***/
+                celda = crearCelda(referenciaCelda, texto);
+
+                datosHoja.InsertAt(celda, 0);
+            }
+        }
+
+        /// <summary>
+        /// Obtiene el texto de una celda
+        /// Si el texto se encuentra en la SharedStringTable o si está directamente en la celda
+        /// </summary>
+        /// <param name="principal"></param>
+        /// <param name="datosHoja"></param>
+        /// <param name="referenciaCelda"></param>
+        /// <returns></returns>
+        private static string TextoCelda(WorkbookPart principal, SheetData datosHoja, string referenciaCelda)
+        {
+            string texto = string.Empty;
+
+            var celda =
+                datosHoja.Descendants<Cell>()
+                .Where(c => c.CellReference.Value.Equals(referenciaCelda))
+                .FirstOrDefault();
+
+            //si es un sharedstring
+            if (celda.DataType.Value == CellValues.SharedString)
+            {
+                int.TryParse(celda.InnerText, out int id);
+                var dato =
+                        principal
+                        .SharedStringTablePart
+                        .SharedStringTable
+                        .Elements<SharedStringItem>()
+                        .ElementAtOrDefault(id);
+                if (dato != null)
+                    texto = dato.InnerText;
+            }
+            else
+            {
+                texto = celda.InnerText;
+            }
+
+            return texto;
+        }
+
         public static void editarXLSX()
         {
             string lTemplate = Path.Combine(Environment.CurrentDirectory, "excelTemplate.xlsx");
@@ -118,17 +270,16 @@ namespace open_xml
 
                         var datosHoja1 = hoja1.Worksheet.Elements<SheetData>().First();
 
-                        #region FechaEncabezado
+                        //var tablaStrings = TablaStrings(Principal);
+
+                        #region Encabezado
+
+                        //Consecutivo
+                        TextoCelda(datosHoja1, "K4", "01-132456-2021");
 
                         // Texto con la fecha actual
                         var FechaActual = $"Fecha: {DateTime.Now.ToLongDateString()}";
-
-                        // Obtener la celda E4
-                        var E4_Fecha = datosHoja1.Descendants<Cell>().Where(c => c.CellReference.Value.Equals("E4")).FirstOrDefault();
-
-                        E4_Fecha.RemoveAllChildren();
-                        E4_Fecha.AppendChild(new InlineString(new Text { Text = FechaActual }));
-                        E4_Fecha.DataType = CellValues.InlineString;
+                        TextoCelda(datosHoja1, "E4", FechaActual);
 
                         #endregion
 
