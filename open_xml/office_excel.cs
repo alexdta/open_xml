@@ -6,6 +6,7 @@ using System.Data;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace open_xml
 {
@@ -185,30 +186,58 @@ namespace open_xml
         /// Cambia el texto de una celda especifica en una hoja
         /// </summary>
         /// <param name="datosHoja"></param>
-        /// <param name="referenciaCelda"></param>
+        /// <param name="numeroCelda"></param>
         /// <param name="texto"></param>
-        private static void TextoCelda(SheetData datosHoja, string referenciaCelda, string texto)
+        private static void TextoCelda(SheetData datosHoja, string numeroCelda, string texto)
         {
             //Buscar la celda en la hoja
             var celda =
                 datosHoja.Descendants<Cell>()
-                .Where(c => c.CellReference.Value.Equals(referenciaCelda))
+                .Where(c => c.CellReference.Value.Equals(numeroCelda))
                 .FirstOrDefault();
 
             //Si la celda ya contiene datos, estos se actualizan
             if (celda != null)
             {
+                //Mejorar => Si el texto está en SharedStringTable
                 celda.RemoveAllChildren();
                 celda.AppendChild(new InlineString(new Text { Text = texto }));
                 celda.DataType = CellValues.InlineString;
             }
-            //Si la celda no contiene nada, se crea la celda con sus datos
+            //Si la celda no existe, se crea la celda con sus datos
             else
             {
-                /***REVISAR POR QUE NO FUNCIONA***/
-                celda = crearCelda(referenciaCelda, texto);
+                //Nueva Celda
+                celda = crearCelda(numeroCelda, texto);
 
-                datosHoja.InsertAt(celda, 0);
+                //Numero de Fila
+                var NumFila = Convert.ToUInt32(Regex.Match(numeroCelda, @"\d+").Value);
+
+                //Obtener la fila
+                var Fila = ObtenerFila(datosHoja, NumFila);
+
+                //Las celdas deben estar en orden
+                Cell celdaReferencia = null;
+
+                if (Fila.Elements<Cell>().Count() > 0)
+                {
+                    //Revisar antes de cual celda insertar la nueva
+                    foreach (Cell cell in Fila.Elements<Cell>())
+                    {
+                        if (cell.CellReference.Value.Length == numeroCelda.Length)
+                        {
+                            if (string.Compare(cell.CellReference.Value, numeroCelda, true) > 0)
+                            {
+                                celdaReferencia = cell;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                //Insertar la celda antes de la de referencia (si existiese)
+                Fila.InsertBefore(celda, celdaReferencia);
+
             }
         }
 
@@ -250,6 +279,33 @@ namespace open_xml
             return texto;
         }
 
+        /// <summary>
+        /// Obtiene una fila especifica de una hoja según el numero indicado
+        /// Si la fila no existe la crea y la inserta en la hoja
+        /// </summary>
+        /// <param name="datosHoja"></param>
+        /// <param name="numFila"></param>
+        /// <returns></returns>
+        private static Row ObtenerFila(SheetData datosHoja, uint numFila)
+        {
+            var Fila = datosHoja.Elements<Row>()
+                .Where(r => r.RowIndex == numFila)
+                .FirstOrDefault();
+
+            if (Fila == null)
+            {
+                Fila = new Row() { RowIndex = numFila };
+
+                var FilaRef = datosHoja.Elements<Row>()
+                            .Where(r => r.RowIndex == numFila - 1)
+                            .FirstOrDefault();
+
+                datosHoja.InsertAfter(Fila, FilaRef);
+            }
+
+            return Fila;
+        }
+
         public static void editarXLSX()
         {
             string lTemplate = Path.Combine(Environment.CurrentDirectory, "excelTemplate.xlsx");
@@ -280,6 +336,9 @@ namespace open_xml
                         // Texto con la fecha actual
                         var FechaActual = $"Fecha: {DateTime.Now.ToLongDateString()}";
                         TextoCelda(datosHoja1, "E4", FechaActual);
+
+                        // Insertar Texto en una Fila/Celda Nueva
+                        TextoCelda(datosHoja1, "M7", "Edgar Chaves");
 
                         #endregion
 
@@ -345,6 +404,14 @@ namespace open_xml
 
                     }
                 }
+                else
+                {
+                    throw new Exception("No se pudo generar el nuevo archivo");
+                }
+            }
+            else
+            {
+                throw new Exception("No se encuentra la plantilla");
             }
         }
 
