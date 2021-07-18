@@ -306,6 +306,48 @@ namespace open_xml
             return Fila;
         }
 
+        /// <summary>
+        /// Desplaza todas las filas N posiciones desde un punto dado
+        /// filaReferencia = 0, para desplazar todas las filas desde la 1
+        /// Se cambian las referencias de las celdas, A# => A(# + desplazamiento)
+        /// </summary>
+        /// <param name="datosHoja"></param>
+        /// <param name="filaReferencia"></param>
+        /// <param name="filasDesplazar"></param>
+        public static void desplazarFilas(SheetData datosHoja, uint filaReferencia, int filasDesplazar)
+        {
+            //Todas las Filas despues de la posición de referencia
+            var filasAMover = datosHoja.Elements<Row>()
+                            .Where(r => r.RowIndex > filaReferencia);
+
+            //Mover las filas existentes hacia abajo
+            /*Si voy a insertar N filas nuevas desde la posición 10
+             *tengo q mover todas las filas desde la 10 N posiciones
+             */
+            foreach (var lFila in filasAMover)
+            {
+                //Se establece el nuevo indice de la fila
+                //La fila N se convertirá en la N+M
+                //M = posiciones que se moveran las filas hacia abajo
+                var indiceActual = lFila.RowIndex.Value;
+                var indiceNuevo = lFila.RowIndex + filasDesplazar;
+
+                //Hay que cambiarle el indice a las celdas de cada fila
+                //A11 => A12
+                //N = 11 => N+M = 12
+                foreach (Cell cell in lFila.Elements<Cell>())
+                {
+                    string cellReference = cell.CellReference.Value;
+
+                    //Se cambia en la referencia de la celda, N por N+M
+                    cell.CellReference =
+                        new StringValue(cellReference.Replace(indiceActual.ToString(), indiceNuevo.ToString()));
+                }
+
+                lFila.RowIndex = (uint)indiceNuevo;
+            }
+        }
+
         public static void editarXLSX()
         {
             string lTemplate = Path.Combine(Environment.CurrentDirectory, "excelTemplate.xlsx");
@@ -322,9 +364,11 @@ namespace open_xml
                     {
                         var Principal = libro.WorkbookPart;
 
-                        var hoja1 = Principal.WorksheetParts.ElementAt(0);
+                        var hoja1 = Principal.WorksheetParts.ElementAt(1);
+                        var hoja2 = Principal.WorksheetParts.ElementAt(0);
 
                         var datosHoja1 = hoja1.Worksheet.Elements<SheetData>().First();
+                        var datosHoja2 = hoja2.Worksheet.Elements<SheetData>().First();
 
                         //var tablaStrings = TablaStrings(Principal);
 
@@ -387,6 +431,18 @@ namespace open_xml
 
                         #endregion
 
+                        #region DesplazarFilas
+
+                        //Se desplazan todas las filas mayores a la 3, 2 espacios hacia abajo
+                        desplazarFilas(datosHoja2, 3, 2);
+
+                        TextoCelda(datosHoja2, "A4", "ABRIL");
+                        TextoCelda(datosHoja2, "B4", "<= Dato Agregado");
+                        TextoCelda(datosHoja2, "A5", "MAYO");
+                        TextoCelda(datosHoja2, "B5", "<= Dato Agregado");
+
+                        #endregion
+
                         libro.Close();
 
                         #region AbrirArchivo
@@ -417,3 +473,4 @@ namespace open_xml
 
     }
 }
+    
